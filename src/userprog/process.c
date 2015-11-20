@@ -28,7 +28,7 @@ static bool load (const char *cmdline, void (**eip) (void), void **esp);
 tid_t
 process_execute (const char *file_name) 
 {
-  char *fn_copy;
+  char *fn_copy, *temp;
   tid_t tid;
 
   /* Make a copy of FILE_NAME.
@@ -41,7 +41,9 @@ process_execute (const char *file_name)
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
+  {
     palloc_free_page (fn_copy); 
+  }
   return tid;
 }
 
@@ -53,6 +55,7 @@ start_process (void *file_name_)
   char *file_name = file_name_;
   struct intr_frame if_;
   bool success;
+
 
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
@@ -200,6 +203,7 @@ static bool validate_segment (const struct Elf32_Phdr *, struct file *);
 static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
                           uint32_t read_bytes, uint32_t zero_bytes,
                           bool writable);
+bool push_args(void **esp, char *file_name, char **temp);
 
 /* Loads an ELF executable from FILE_NAME into the current thread.
    Stores the executable's entry point into *EIP
@@ -213,13 +217,18 @@ load (const char *file_name, void (**eip) (void), void **esp)
   struct file *file = NULL;
   off_t file_ofs;
   bool success = false;
-  int i;
+  int i, ret;
+
+  char *temp;
 
   /* Allocate and activate page directory. */
   t->pagedir = pagedir_create ();
   if (t->pagedir == NULL) 
     goto done;
   process_activate ();
+
+  //Splitting file name
+  file_name = strtok_r(file_name, " ", &temp);
 
   /* Open executable file. */
   file = filesys_open (file_name);
@@ -302,8 +311,13 @@ load (const char *file_name, void (**eip) (void), void **esp)
     }
 
   /* Set up stack. */
+//  printf("Setting up stack\n");
   if (!setup_stack (esp))
     goto done;
+  else
+  {
+    push_args(esp, file_name, &temp);
+  }
 
   /* Start address. */
   *eip = (void (*) (void)) ehdr.e_entry;
@@ -317,6 +331,80 @@ load (const char *file_name, void (**eip) (void), void **esp)
 }
 
 /* load() helpers. */
+
+bool push_args(void **esp, char *file_name, char **temp)
+{
+  char *save;
+  char **argv = malloc(2*sizeof(char *));
+  char **argvs = malloc(2*sizeof(char *));
+  int argc=0, i, argv_size=2;
+
+  ASSERT(argv != NULL);
+
+//  printf("------->%s || %s <---------\n", file_name, *temp);
+
+  //Saving argvs in rtl format
+  for (save = (char *) file_name; save!= NULL;
+      save= strtok_r (NULL, " ", temp))
+  {
+    if(argc >= argv_size)
+    {
+      argv_size+=2;
+      argv = realloc(argv, argv_size*sizeof(char *));
+    }
+    argvs[argc] = save;
+//    printf("%s\n", argvs[argc]);
+    argc++;
+  }
+
+//  printf("start: 0x%x\n", *esp);
+
+//  printf("----- pushing argvs----\n");
+  //Push argvs to stack and save addresses
+  for(i=argc-1; i>=0; i--)
+  {
+    *esp = *esp - (strlen(argvs[i])+1);
+//    printf("0x%x ", *esp);
+    memcpy(*esp, argvs[i], strlen(argvs[i])+1);
+    argv[i] = *esp;
+//    printf("%s \n", argvs[i]);
+  }
+  argv[argc]=0;
+
+  //Word align esp, to boundary of 4
+  i= ((unsigned int)(*esp))%4;
+  if(i)
+  {
+   *esp-=i;
+  }
+
+//  printf("0x%x\n", *esp);
+//  hex_dump(0, *esp, PHYS_BASE - *esp, true);
+  
+//  printf("------argv addresses----\n");
+  //Pushing argv memory addresses
+  for(i=argc; i>=0; i--)
+  {
+//    printf("argv[%d] 0x%x\n",i, argv[i]);
+    *esp -= sizeof(char *);
+//    printf("0x%x\n", *esp);
+    memcpy(*esp, &argv[i], sizeof(char *));
+  }
+  //pushing memory address of argv and arg count in esp
+  argv = *esp;
+  *esp -= sizeof(char **);
+  memcpy(*esp, &argv, sizeof(char **));
+
+  *esp -= sizeof(int);
+  memcpy(*esp, &argc, sizeof(int));
+
+  *esp -= sizeof(void(*)());
+
+
+//  printf("\nesp= 0x%x\n%d\n", *esp, PHYS_BASE - *esp);
+  hex_dump(0, *esp, PHYS_BASE - *esp, true);
+  return true;
+}
 
 static bool install_page (void *upage, void *kpage, bool writable);
 
@@ -431,6 +519,8 @@ setup_stack (void **esp)
 {
   uint8_t *kpage;
   bool success = false;
+
+//  printf("Setting up stack\n");
 
   kpage = palloc_get_page (PAL_USER | PAL_ZERO);
   if (kpage != NULL) 
