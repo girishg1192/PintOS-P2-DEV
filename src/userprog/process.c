@@ -91,7 +91,7 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid UNUSED) 
 {
-  return -1;
+  while(1);
 }
 
 /* Free the current process's resources. */
@@ -349,7 +349,7 @@ bool push_args(void **esp, char *file_name, char **temp)
   {
     if(argc >= argv_size)
     {
-      argv_size+=2;
+      argv_size += 2;
       argv = realloc(argv, argv_size*sizeof(char *));
     }
     argvs[argc] = save;
@@ -401,8 +401,9 @@ bool push_args(void **esp, char *file_name, char **temp)
   *esp -= sizeof(void(*)());
 
 
-//  printf("\nesp= 0x%x\n%d\n", *esp, PHYS_BASE - *esp);
+  printf("\nesp= 0x%x\n%d\n", *esp, PHYS_BASE - *esp);
   hex_dump(0, *esp, PHYS_BASE - *esp, true);
+  printf("\n");
   return true;
 }
 
