@@ -463,6 +463,11 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
+  sema_init(t->wait_sem, 0);
+
+  /* Keeping track of open files*/
+  list_init(&(t->open_file));
+  t->fd = 2;    /* fd values start from 2, 0 and 1 reserved for STDIN and STDOUT*/
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);

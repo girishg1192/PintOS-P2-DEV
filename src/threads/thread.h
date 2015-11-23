@@ -93,14 +93,27 @@ struct thread
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
 
+
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
+
+    struct list open_file;              /* List of open files */
+    int fd;
+    struct semaphore wait_sem;
 #endif
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
   };
+
+//
+struct open_file_info
+{
+  struct file *fp;
+  int fd;
+  struct list_elem elem;              /* List element to add to open_file*/
+};
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
