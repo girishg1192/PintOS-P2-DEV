@@ -13,6 +13,7 @@
 #include "threads/vaddr.h"
 #ifdef USERPROG
 #include "userprog/process.h"
+#include "malloc.h"
 #endif
 
 /* Random value for struct thread's `magic' member.
@@ -58,6 +59,7 @@ static unsigned thread_ticks;   /* # of timer ticks since last yield. */
    If true, use multi-level feedback queue scheduler.
    Controlled by kernel command-line option "-o mlfqs". */
 bool thread_mlfqs;
+static struct thread_info main_info;
 
 static void kernel_thread (thread_func *, void *aux);
 
@@ -70,6 +72,7 @@ static void *alloc_frame (struct thread *, size_t size);
 static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
+void init_thread_info (struct thread *t);
 
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
@@ -98,6 +101,7 @@ thread_init (void)
   init_thread (initial_thread, "main", PRI_DEFAULT);
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
+  init_thread_info(initial_thread);
 }
 
 /* Starts preemptive thread scheduling by enabling interrupts.
@@ -182,6 +186,7 @@ thread_create (const char *name, int priority,
   /* Initialize thread. */
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
+  init_thread_info(t);
 
   /* Stack frame for kernel_thread(). */
   kf = alloc_frame (t, sizeof *kf);
@@ -463,7 +468,6 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
-  sema_init(t->wait_sem, 0);
 
   /* Keeping track of open files*/
   list_init(&(t->open_file));
@@ -473,10 +477,39 @@ init_thread (struct thread *t, const char *name, int priority)
   list_push_back (&all_list, &t->allelem);
   intr_set_level (old_level);
 }
+void
+init_thread_info (struct thread *t)
+{
+  struct thread_info *info;
+  if(t != initial_thread)
+    info = (struct thread_info *) malloc(sizeof(struct thread_info));
+  else 
+    info = &main_info;
+  ASSERT(info!=NULL);
+  //printf("point 1\n");
+  //if(thread_current()!=idle_thread)
+  {
+    info->is_alive = true;
+    info->is_parent_alive = true;
+    list_init(&info->child_list);
+    sema_init(&info->wait_sem, 0);
+    info->exit_status = -1;
+    info->tid = t->tid;
+    info->wait_once = false;
+    if(thread_current()->info!=NULL)
+      list_push_back (&thread_current()->info->child_list, &info->elem);
+    t->info = info;
+  }
+  //else
+  //{
+  //  free(info);
+  //}
+  //printf("parent:%s tid:%d child:%s info:0x%x\n", thread_current()->name, thread_current()->tid, t->name, t->info);
+}
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and
    returns a pointer to the frame's base. */
-static void *
+  static void *
 alloc_frame (struct thread *t, size_t size) 
 {
   /* Stack data is always allocated in word-size units. */
@@ -492,7 +525,7 @@ alloc_frame (struct thread *t, size_t size)
    empty.  (If the running thread can continue running, then it
    will be in the run queue.)  If the run queue is empty, return
    idle_thread. */
-static struct thread *
+  static struct thread *
 next_thread_to_run (void) 
 {
   if (list_empty (&ready_list))
@@ -517,11 +550,11 @@ next_thread_to_run (void)
 
    After this function and its caller returns, the thread switch
    is complete. */
-void
+  void
 thread_schedule_tail (struct thread *prev)
 {
   struct thread *cur = running_thread ();
-  
+
   ASSERT (intr_get_level () == INTR_OFF);
 
   /* Mark us as running. */
@@ -541,10 +574,10 @@ thread_schedule_tail (struct thread *prev)
      initial_thread because its memory was not obtained via
      palloc().) */
   if (prev != NULL && prev->status == THREAD_DYING && prev != initial_thread) 
-    {
-      ASSERT (prev != cur);
-      palloc_free_page (prev);
-    }
+  {
+    ASSERT (prev != cur);
+    palloc_free_page (prev);
+  }
 }
 
 /* Schedules a new process.  At entry, interrupts must be off and
@@ -554,7 +587,7 @@ thread_schedule_tail (struct thread *prev)
 
    It's not safe to call printf() until thread_schedule_tail()
    has completed. */
-static void
+  static void
 schedule (void) 
 {
   struct thread *cur = running_thread ();
@@ -571,7 +604,7 @@ schedule (void)
 }
 
 /* Returns a tid to use for a new thread. */
-static tid_t
+  static tid_t
 allocate_tid (void) 
 {
   static tid_t next_tid = 1;

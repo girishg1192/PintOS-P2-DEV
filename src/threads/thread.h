@@ -4,6 +4,7 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include "threads/synch.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -101,6 +102,8 @@ struct thread
     struct list open_file;              /* List of open files */
     int fd;
     struct semaphore wait_sem;
+    struct thread_info *info;           /*Stores the pointer of of 
+                                          thread_info struct*/
 #endif
 
     /* Owned by thread.c. */
@@ -113,6 +116,26 @@ struct open_file_info
   struct file *fp;
   int fd;
   struct list_elem elem;              /* List element to add to open_file*/
+};
+
+/* Structure storing thread info
+ * The structure will persist even after thread_exit
+ * exit_status and flags that indicate if the thread
+ * and parent thread are alive are set. The structure
+ * memory is freed only when the thread has no alive 
+ * parent.
+ */
+struct thread_info
+{
+  //int ppid;
+  int tid;
+  bool is_parent_alive;
+  struct list child_list;
+  bool is_alive;
+  int exit_status;
+  struct list_elem elem;
+  bool wait_once;
+  struct semaphore wait_sem;
 };
 
 /* If false (default), use round-robin scheduler.

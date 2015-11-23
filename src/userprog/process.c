@@ -38,6 +38,8 @@ process_execute (const char *file_name)
   if (fn_copy == NULL)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
+  
+  file_name = strtok_r(file_name, " ", &temp);
 
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
@@ -45,6 +47,7 @@ process_execute (const char *file_name)
   {
     palloc_free_page (fn_copy); 
   }
+  
   return tid;
 }
 
@@ -90,9 +93,33 @@ start_process (void *file_name_)
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
 int
-process_wait (tid_t child_tid UNUSED) 
+process_wait (tid_t child_tid) 
 {
-  while(1);
+  struct list_elem *e;
+  struct thread *t = thread_current();
+
+  //printf("waiting process!! %s tid = %d\n", t->name, child_tid);
+  if(t->info == NULL) printf("NULL\n");
+
+  for (e = list_begin (&t->info->child_list); e != list_end (&t->info->child_list);
+      e = list_next (e))
+  {
+    struct thread_info *i = list_entry (e, struct thread_info, elem);
+    if(i->tid == child_tid)
+    {
+      if(!i->wait_once)
+      {
+        i->wait_once = true;
+   //    printf("waiting process!! %s tid = %d\n", t->name, i->tid);
+   //    printf("Sem down 0x%x\n", &i->wait_sem);
+        sema_down(&i->wait_sem);
+        return i->exit_status;
+      }
+      else
+        return -1;
+    }
+  }
+  return -1;
 }
 
 /* Free the current process's resources. */
@@ -401,10 +428,6 @@ bool push_args(void **esp, char *file_name, char **temp)
 
   *esp -= sizeof(void(*)());
 
-
-  printf("\nesp= 0x%x\n%d\n", *esp, PHYS_BASE - *esp);
-  hex_dump(0, *esp, PHYS_BASE - *esp, true);
-  printf("\n");
   return true;
 }
 
