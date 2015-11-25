@@ -2,6 +2,7 @@
 #define USERPROG_SYSCALL_H
 
 #include <stdint.h>
+#include <stdbool.h>
 
 void syscall_init (void);
 
@@ -12,6 +13,14 @@ int read(uint32_t *);
 int open(uint32_t *);
 void close(uint32_t *);
 int wait(uint32_t *);
+void halt();
+int exec(uint32_t*);
+bool create(uint32_t*);
+bool remove(uint32_t*);
+int filesize(uint32_t*);
+void seek(uint32_t*);
+unsigned tell(uint32_t*);
+
 //int find_file_from_fd(int fd, struct open_file_info *file_info);
 
 #endif /* userprog/syscall.h */

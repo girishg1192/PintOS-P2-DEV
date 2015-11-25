@@ -8,6 +8,7 @@
 #include "filesys/filesys.h"
 #include "filesys/file.h"
 #include "threads/malloc.h"
+#include "devices/shutdown.h"
 
 #define STDOUT 1
 #define STDIN 0
@@ -32,10 +33,11 @@ syscall_handler (struct intr_frame *f UNUSED)
   //hex_dump(0, f->esp, PHYS_BASE - f->esp, true);
 
   syscall_number = *esp_top;
-//printf("arg = %d\n", syscall_number);
+  //printf("arg = %d\n", syscall_number);
   switch(syscall_number)
   {
-    case SYS_WRITE: f->eax = write(esp_top);
+    case SYS_WRITE: 
+      f->eax = write(esp_top);
                     break;
     case SYS_EXIT: exit(esp_top);
                    break;
@@ -44,8 +46,23 @@ syscall_handler (struct intr_frame *f UNUSED)
     case SYS_CLOSE: close(esp_top);
                     break;
     case SYS_READ: f->eax = read(esp_top);
-                    break;
-    case SYS_WAIT: break;
+                   break;
+    case SYS_WAIT: f->eax = wait(esp_top);
+                   break;
+    case SYS_HALT: halt();
+                   break;
+    case SYS_EXEC: f->eax = exec(esp_top);
+                   break;
+    case SYS_CREATE: f->eax = create(esp_top);
+                     break;
+    case SYS_REMOVE: f->eax = remove(esp_top);
+                     break;
+    case SYS_FILESIZE: f->eax = filesize(esp_top);
+                       break;
+    case SYS_SEEK: seek(esp_top);
+                   break;
+    case SYS_TELL: f->eax = tell(esp_top);
+                   break;
   }
 }
 
@@ -63,9 +80,11 @@ int find_file_from_fd(int fd, struct open_file_info *file_info)
     if(temp->fd == fd)
     {
       file_info = temp;
+//      printf("%d 0x%x\n", temp->fd, file_info);
       return SUCCESS;
     }
   }
+  //printf("error\n");
     return ERROR;
 }  
 
@@ -75,7 +94,6 @@ void exit(uint32_t* esp)
   struct thread *t=thread_current();
   struct thread_info *i = t->info, *temp;
   struct list_elem *e;
-  char *file_name, *tempa;
   esp++;
   ret = *esp;
   printf("%s: exit(%d)\n", t->name, ret);
@@ -112,6 +130,15 @@ int write(uint32_t *esp)
 
   struct open_file_info *file_info = NULL;
 
+  //printf("0x%x 0x%x\n", (buffer),PHYS_BASE);
+  if(buffer == NULL)
+    return ERROR;
+  //printf("not NULL\n");
+  if(!is_user_vaddr(buffer))
+  {
+    return ERROR;
+  }
+
   if(fd == STDOUT)
   {
     putbuf((char *)buffer, size);
@@ -135,6 +162,12 @@ int read(uint32_t *esp)
   unsigned size = *(++esp);
 
   struct open_file_info *file_info = NULL;
+  if(buffer == NULL)
+    return ERROR;
+  if(!is_user_vaddr(&buffer+size))
+  {
+    return ERROR;
+  }
 
   if(fd == STDIN)
   {
@@ -155,30 +188,42 @@ int read(uint32_t *esp)
 int open(uint32_t *esp)
 {
   struct thread *t= thread_current();
-  struct open_file_info *f1 = (struct open_file_info*) 
-                                  malloc(sizeof(struct open_file_info));
+  struct open_file_info *f1; //= (struct open_file_info*) 
+                                  //malloc(sizeof(struct open_file_info));
   char *file_name = (char *)(*(++esp));
 
-  //printf("%d file_name = %s\n", t->fd, file_name);
+  if(!is_user_vaddr(file_name))
+  {
+    return ERROR;
+  }
+
+  if(file_name == NULL)
+    return ERROR;
   f1->fp = filesys_open(file_name);
+  printf("file open 0x%x 0x%x 0x%x\n", f1->fp, f1, &f1->elem);
   if(f1->fp == NULL)
     return ERROR;
 
   f1->fd = (t->fd)++;
 
-  list_push_back(&(t->open_file), &(f1->elem));
+  list_push_back(&(t->open_file), &f1->elem);
   return f1->fd;
 }
 
 void close(uint32_t *esp)
 {
   int fd = *(++esp);
-  struct open_file_info *file_info= NULL;
+  struct open_file_info *file_info = (struct open_file_info *) 
+                                          malloc(sizeof(struct open_file_info));
 
   if(find_file_from_fd(fd, file_info) == SUCCESS)
   {
-    file_close(file_info->fp);
+//    printf("1\n");
+    //printf("found!! 0x%x\n", &file_info->fp);
+    file_close(&file_info->fp);
+    //printf("found!! 0x%x\n", &file_info->elem);
     list_remove(&file_info->elem);
+    //printf("found!!\n");
     free(file_info);
   }
 }
@@ -189,4 +234,41 @@ int wait(uint32_t *esp)
   int ret = process_wait(pid);
   //printf("ret stat %d", ret);
   return ret;
+}
+void halt()
+{
+  shutdown_power_off();
+}
+int exec(uint32_t *esp)
+{
+  const char *file_name = (const char *)(*(++esp));
+  int pid = process_execute(file_name);
+  //TODO
+  //sem_down( thread_current()->child->sem
+}
+bool create(uint32_t *esp)
+{
+  const char *file = (const char *)(*(++esp));
+  unsigned initial_size = (unsigned)(*(++esp));
+
+  return false;
+}
+bool remove(uint32_t *esp)
+{
+  const char *file = (const char *)(*(++esp));
+  return false;
+}
+
+void seek(uint32_t *esp)
+{
+  //
+}
+unsigned tell(uint32_t *esp)
+{
+  //
+}
+
+int filesize(uint32_t *esp)
+{
+  return 0;
 }
