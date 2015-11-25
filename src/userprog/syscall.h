@@ -7,18 +7,18 @@
 void syscall_init (void);
 
 //Syscall implementation
-void exit(uint32_t *);
-int write(uint32_t *);
-int read(uint32_t *);
-int open(uint32_t *);
-void close(uint32_t *);
-int wait(uint32_t *);
+void exit(int);
+int write(int , void *, unsigned);
+int read(int, void *, unsigned);
+int open(const char *);
+void close(int);
+int wait(int);
 void halt();
-int exec(uint32_t*);
-bool create(uint32_t*);
-bool remove(uint32_t*);
-int filesize(uint32_t*);
-void seek(uint32_t*);
+int exec(const char *);
+bool create(const char *, unsigned );
+bool remove(const char *);
+int filesize(int);
+void seek(int,unsigned);
 unsigned tell(uint32_t*);
 
 //int find_file_from_fd(int fd, struct open_file_info *file_info);
