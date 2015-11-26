@@ -21,6 +21,7 @@
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
+struct thread_info* find_child_for_tid(tid_t child_tid);
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
@@ -32,21 +33,35 @@ process_execute (const char *file_name)
   char *fn_copy, *temp;
   tid_t tid;
 
+  char *file_name_copy;
+  struct thread_info *wait_for_child;
+
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
   fn_copy = palloc_get_page (0);
   if (fn_copy == NULL)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
+
+  file_name_copy = palloc_get_page (0);
+  if (file_name_copy == NULL)
+    return TID_ERROR;
+  strlcpy (file_name_copy, file_name, PGSIZE);
   
-  file_name = strtok_r((char *) file_name, " ", &temp);  //Added to create thread with name as the first argument
+  file_name_copy = strtok_r(file_name_copy, " ", &temp);  //Added to create thread with name as the first argument
 
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+  tid = thread_create (file_name_copy, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
   {
     palloc_free_page (fn_copy); 
+    palloc_free_page (file_name_copy); 
   }
+
+  wait_for_child = find_child_for_tid(tid);
+  sema_down(&wait_for_child->wait_load_sem);
+  if(!wait_for_child->is_load_successful)
+    return TID_ERROR;
   
   return tid;
 }
@@ -68,17 +83,11 @@ start_process (void *file_name_)
   if_.eflags = FLAG_IF | FLAG_MBS;
   success = load (file_name, &if_.eip, &if_.esp);
   //TODO
-  /*
+  
   if(success)
-  {
-    loaded_success_flag=1;
-  }
-  else
-  {
-    loaded_success_flag=0;
-  }
-  sema_up
-  */
+    thread_current()->info->is_load_successful = true;
+  sema_up(&thread_current()->info->wait_load_sem);
+  
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
@@ -104,34 +113,36 @@ start_process (void *file_name_)
 
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
-int
-process_wait (tid_t child_tid) 
+struct thread_info*
+find_child_for_tid(tid_t child_tid)
 {
-  struct list_elem *e;
   struct thread *t = thread_current();
+  struct list_elem *e;
 
-  //printf("waiting process!! %s tid = %d\n", t->name, child_tid);
-  if(t->info == NULL) printf("NULL\n");
-
+  if(t->info == NULL) return NULL;
   for (e = list_begin (&t->info->child_list); e != list_end (&t->info->child_list);
       e = list_next (e))
   {
     struct thread_info *i = list_entry (e, struct thread_info, elem);
     if(i->tid == child_tid)
-    {
-      if(!i->wait_once)
-      {
-        i->wait_once = true;
-   //    printf("waiting process!! %s tid = %d\n", t->name, i->tid);
-   //    printf("Sem down 0x%x\n", &i->wait_sem);
-        sema_down(&i->wait_sem);
-        return i->exit_status;
-      }
-      else
-        return -1;
-    }
+      return i;
   }
-  return -1;
+  return NULL;
+}
+int
+process_wait (tid_t child_tid) 
+{
+  struct thread_info *child;
+
+  child = find_child_for_tid(child_tid);
+  if(child && !child->wait_once)
+  {
+    child->wait_once = true;
+    sema_down(&child->wait_sem);
+    return child->exit_status;
+  }
+  else
+    return -1;
 }
 
 /* Free the current process's resources. */
@@ -352,7 +363,6 @@ load (const char *file_name, void (**eip) (void), void **esp)
     }
 
   /* Set up stack. */
-//  printf("Setting up stack\n");
   if (!setup_stack (esp))
     goto done;
   else
@@ -382,7 +392,6 @@ bool push_args(void **esp, char *file_name, char **temp)
 
   ASSERT(argv != NULL);
 
-//  printf("------->%s || %s <---------\n", file_name, *temp);
 
   //Saving argvs in rtl format
   for (save = (char *) file_name; save!= NULL;
@@ -394,21 +403,14 @@ bool push_args(void **esp, char *file_name, char **temp)
       argv = realloc(argv, argv_size*sizeof(char *));
     }
     argvs[argc] = save;
-//    printf("%s\n", argvs[argc]);
     argc++;
   }
 
-//  printf("start: 0x%x\n", *esp);
-
-//  printf("----- pushing argvs----\n");
-  //Push argvs to stack and save addresses
   for(i=argc-1; i>=0; i--)
   {
     *esp = *esp - (strlen(argvs[i])+1);
-//    printf("0x%x ", *esp);
     memcpy(*esp, argvs[i], strlen(argvs[i])+1);
     argv[i] = *esp;
-//    printf("%s \n", argvs[i]);
   }
   argv[argc]=0;
 
@@ -419,16 +421,9 @@ bool push_args(void **esp, char *file_name, char **temp)
    *esp-=i;
   }
 
-//  printf("0x%x\n", *esp);
-//  hex_dump(0, *esp, PHYS_BASE - *esp, true);
-  
-//  printf("------argv addresses----\n");
-  //Pushing argv memory addresses
   for(i=argc; i>=0; i--)
   {
-//    printf("argv[%d] 0x%x\n",i, argv[i]);
     *esp -= sizeof(char *);
-//    printf("0x%x\n", *esp);
     memcpy(*esp, &argv[i], sizeof(char *));
   }
   //pushing memory address of argv and arg count in esp
@@ -557,8 +552,6 @@ setup_stack (void **esp)
 {
   uint8_t *kpage;
   bool success = false;
-
-//  printf("Setting up stack\n");
 
   kpage = palloc_get_page (PAL_USER | PAL_ZERO);
   if (kpage != NULL) 

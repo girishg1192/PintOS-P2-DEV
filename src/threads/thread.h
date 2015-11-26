@@ -101,7 +101,6 @@ struct thread
 
     struct list open_file;              /* List of open files */
     int fd;
-    struct semaphore wait_sem;
     struct thread_info *info;           /*Stores the pointer of of 
                                           thread_info struct*/
 #endif
@@ -134,8 +133,16 @@ struct thread_info
   bool is_alive;
   int exit_status;
   struct list_elem elem;
+
+  /*Synch primitives for wait() syscall*/
   bool wait_once;
   struct semaphore wait_sem;
+
+  /*Synchronization for child loading, parent waits on wait_load_sem till child loading
+   * if load() function fails, child stores loading status in is_load_successful*/
+  bool is_load_successful;
+  struct semaphore wait_load_sem;
+
 };
 
 /* If false (default), use round-robin scheduler.

@@ -493,9 +493,11 @@ init_thread_info (struct thread *t)
     info->is_parent_alive = true;
     list_init(&info->child_list);
     sema_init(&info->wait_sem, 0);
+    sema_init(&info->wait_load_sem, 0);
     info->exit_status = -1;
     info->tid = t->tid;
     info->wait_once = false;
+    info->is_load_successful = false;
     if(thread_current()->info!=NULL)
       list_push_back (&thread_current()->info->child_list, &info->elem);
     t->info = info;
