@@ -40,21 +40,21 @@ syscall_handler (struct intr_frame *f UNUSED)
 
   //hex_dump(0, f->esp, PHYS_BASE - f->esp, true);
 
-  if(!check_pointer(esp_top))
+  if(!check_pointer((void *)esp_top))
     exit(ERROR);
   syscall_number = *esp_top++;
 
   switch(syscall_number)
   {
-    case SYS_WRITE: if(!check_pointer(esp_top+1))
+    case SYS_WRITE: if(!check_pointer((void *)esp_top+1))
                       exit(ERROR);
                     f->eax = write((int)(*esp_top), (void *)(*(esp_top+1)), (unsigned) *(esp_top+2) );
                     break;
-    case SYS_EXIT: if(!check_pointer(esp_top))
+    case SYS_EXIT: if(!check_pointer((void *)esp_top))
                      exit(ERROR);
                    exit(*esp_top);
                    break;
-    case SYS_OPEN: if(!check_pointer(esp_top))
+    case SYS_OPEN: if(!check_pointer((void *)esp_top))
                      exit(ERROR);
                    f->eax = open((const char *) *esp_top);
                    break;
@@ -156,21 +156,17 @@ int write(int fd, void *buffer, unsigned size)
     putbuf((char *)buffer, size);
     return size;
   }
-//  else if(fd == STDIN)
-//    return ERROR;
+  else if(fd == STDIN)
+    return ERROR;
 
   if(find_file_from_fd(fd, &file_info) < 0)
   {
     return ERROR;
   }
-//  if(!file_info->fp->deny_write)
     FILE_SYNC_BARRIER 
     size = file_write(file_info->fp, buffer, size);
     FILE_SYNC_BARRIER_END
-  //else
-    //exit(ERROR);
   
-
   return size;
 }
 
@@ -189,6 +185,7 @@ int read(int fd, void *buffer, unsigned size)
   if(fd == STDIN)
   {
     for(iter = 0; iter<size; iter++)
+      //TODO
       //buffer[iter]=input_getc();
     return size;
   }
@@ -211,11 +208,6 @@ int open(const char *file_name)
   struct open_file_info *f1 = (struct open_file_info*) 
                                   malloc(sizeof(struct open_file_info));
 
-  /*if(!is_user_vaddr(file_name))
-  {
-    return ERROR;
-  }
-  */
   if(!check_pointer((void *) file_name))
     exit(ERROR);
     
@@ -266,7 +258,7 @@ void halt()
 int exec(const char *file_name)
 {
   int pid;
-  if(!check_pointer(file_name))
+  if(!check_pointer((void *)file_name))
     exit(ERROR);
   pid = process_execute(file_name);
   return pid;
@@ -279,7 +271,7 @@ bool create(const char *file, unsigned initial_size)
   if(file == NULL)
     exit(ERROR);
 
-  if(!check_pointer(file))
+  if(!check_pointer((void *)file))
     exit(ERROR);
 
   FILE_SYNC_BARRIER
