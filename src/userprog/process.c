@@ -39,7 +39,7 @@ process_execute (const char *file_name)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
   
-  file_name = strtok_r(file_name, " ", &temp);
+  file_name = strtok_r((char *) file_name, " ", &temp);  //Added to create thread with name as the first argument
 
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
@@ -67,6 +67,18 @@ start_process (void *file_name_)
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
   success = load (file_name, &if_.eip, &if_.esp);
+  //TODO
+  /*
+  if(success)
+  {
+    loaded_success_flag=1;
+  }
+  else
+  {
+    loaded_success_flag=0;
+  }
+  sema_up
+  */
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
@@ -256,7 +268,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
   process_activate ();
 
   //Splitting file name
-  file_name = strtok_r(file_name, " ", &temp);
+  file_name = strtok_r((char *)file_name, " ", &temp);
 
   /* Open executable file. */
   file = filesys_open (file_name);
@@ -265,6 +277,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
       printf ("load: %s: open failed\n", file_name);
       goto done; 
     }
+  file_deny_write (file);
 
   /* Read and verify executable header. */
   if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr

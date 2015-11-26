@@ -15,8 +15,12 @@
 #define SUCCESS 0
 #define ERROR -1
 
+#define FILE_SYNC_BARRIER lock_acquire(&fileops_sync);
+#define FILE_SYNC_BARRIER_END lock_release(&fileops_sync);
+
 static void syscall_handler (struct intr_frame *);
 int find_file_from_fd(int , struct open_file_info **);
+struct lock fileops_sync;
 
 bool check_pointer(void* ptr);
 bool check_buffer(void *buffer, int size);
@@ -24,6 +28,7 @@ bool check_buffer(void *buffer, int size);
 void
 syscall_init (void) 
 {
+  lock_init(&fileops_sync);
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
 
@@ -41,7 +46,9 @@ syscall_handler (struct intr_frame *f UNUSED)
 
   switch(syscall_number)
   {
-    case SYS_WRITE: f->eax = write((int)(*esp_top), (void *)(*(esp_top+1)), (unsigned) *(esp_top+2) );
+    case SYS_WRITE: if(!check_pointer(esp_top+1))
+                      exit(ERROR);
+                    f->eax = write((int)(*esp_top), (void *)(*(esp_top+1)), (unsigned) *(esp_top+2) );
                     break;
     case SYS_EXIT: if(!check_pointer(esp_top))
                      exit(ERROR);
@@ -52,9 +59,9 @@ syscall_handler (struct intr_frame *f UNUSED)
                    f->eax = open((const char *) *esp_top);
                    break;
     case SYS_CLOSE: //if(!check_pointer(esp_top));
-                     // exit(-1);
-                    close(*esp_top);
-                    break;
+                   // exit(-1);
+                   close(*esp_top);
+                   break;
     case SYS_READ: f->eax = read((int)(*esp_top), (void *)(*(esp_top+1)), (unsigned) *(esp_top+2) );
                    break;
     case SYS_WAIT: f->eax = wait(*esp_top);
@@ -139,9 +146,10 @@ int write(int fd, void *buffer, unsigned size)
   {
     return ERROR;
   }
-  
-  if(!check_buffer(buffer, size))
+  if(!check_buffer((void *) buffer, size))
+  {
     exit(ERROR);
+  }
 
   if(fd == STDOUT)
   {
@@ -155,8 +163,13 @@ int write(int fd, void *buffer, unsigned size)
   {
     return ERROR;
   }
-
-  size = file_write(file_info->fp, buffer, size);
+//  if(!file_info->fp->deny_write)
+    FILE_SYNC_BARRIER 
+    size = file_write(file_info->fp, buffer, size);
+    FILE_SYNC_BARRIER_END
+  //else
+    //exit(ERROR);
+  
 
   return size;
 }
@@ -185,7 +198,9 @@ int read(int fd, void *buffer, unsigned size)
   if(find_file_from_fd(fd, &file_info) < 0)
     return ERROR;
 
+  FILE_SYNC_BARRIER 
   size = file_read(file_info->fp, buffer, size);
+  FILE_SYNC_BARRIER_END
 
   return size;
 }
@@ -207,7 +222,10 @@ int open(const char *file_name)
 
   if(file_name == NULL)
     return ERROR;
+  FILE_SYNC_BARRIER
   f1->fp = filesys_open(file_name);
+  FILE_SYNC_BARRIER_END
+  //printf("deny_write %d\n", f1->fp->deny_write);
   if(f1->fp == NULL)
     return ERROR;
 
@@ -227,7 +245,10 @@ void close(int fd)
 
   if(find_file_from_fd(fd, &file_info) == SUCCESS)
   {
+    FILE_SYNC_BARRIER
     file_close(file_info->fp);
+    FILE_SYNC_BARRIER_END
+
     list_remove(&file_info->elem);
     free(file_info);
   }
@@ -255,18 +276,27 @@ int exec(const char *file_name)
 bool create(const char *file, unsigned initial_size)
 {
   int ret;
-  if(file == NULL || initial_size < 0)
+  if(file == NULL)
     exit(ERROR);
 
   if(!check_pointer(file))
     exit(ERROR);
+
+  FILE_SYNC_BARRIER
   ret = filesys_create(file, initial_size);
+  FILE_SYNC_BARRIER_END
+
   return ret;
 }
 bool remove(const char *file)
 {
-  //const char *file = (const char *)(*(++esp));
-  return false;
+  bool ret;
+
+  FILE_SYNC_BARRIER
+    ret = filesys_remove(file);
+  FILE_SYNC_BARRIER_END
+
+  return ret;
 }
 
 void seek(int fd, unsigned position)
@@ -274,9 +304,11 @@ void seek(int fd, unsigned position)
 
   struct open_file_info *file_info = NULL;
 
-  if(find_file_from_fd(fd, &file_info) > 0)
+  if(!find_file_from_fd(fd, &file_info))
   {
-    file_seek(file_info, position);
+  FILE_SYNC_BARRIER
+    file_seek(file_info->fp, position);
+  FILE_SYNC_BARRIER_END
   }
   //
 }
@@ -292,7 +324,6 @@ int filesize(int fd)
   if(find_file_from_fd(fd, &file_info) < 0)
     return ERROR;
   return file_length(file_info->fp);
-
 }
 
 bool check_pointer(void* ptr)
