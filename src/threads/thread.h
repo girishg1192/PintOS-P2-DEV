@@ -103,6 +103,7 @@ struct thread
     int fd;
     struct thread_info *info;           /*Stores the pointer of of 
                                           thread_info struct*/
+    struct file *open_executable;
 #endif
 
     /* Owned by thread.c. */

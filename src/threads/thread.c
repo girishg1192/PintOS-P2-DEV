@@ -468,6 +468,7 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
+  t->open_executable = NULL;
 
   /* Keeping track of open files*/
   list_init(&(t->open_file));

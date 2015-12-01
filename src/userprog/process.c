@@ -22,6 +22,7 @@
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 struct thread_info* find_child_for_tid(tid_t child_tid);
+struct file *file = NULL;
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
@@ -154,6 +155,12 @@ process_exit (void)
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
+  //file_allow_write(file);
+  if(cur->open_executable)
+  {
+    file_close (cur->open_executable);
+    cur->open_executable = NULL;
+  }
   pd = cur->pagedir;
   if (pd != NULL) 
     {
@@ -288,6 +295,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
       printf ("load: %s: open failed\n", file_name);
       goto done; 
     }
+  t->open_executable = file;
   file_deny_write (file);
 
   /* Read and verify executable header. */
@@ -377,7 +385,6 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
  done:
   /* We arrive here whether the load is successful or not. */
-  file_close (file);
   return success;
 }
 
