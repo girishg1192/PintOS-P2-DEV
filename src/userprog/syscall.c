@@ -109,6 +109,7 @@ void exit(int status)
 {
   struct thread *t=thread_current();
   struct thread_info *i = t->info, *temp;
+  struct open_file_info *free_files;
   struct list_elem *e;
   printf("%s: exit(%d)\n", t->name, status);
   for (e = list_begin (&i->child_list); e != list_end (&i->child_list);)
@@ -133,6 +134,14 @@ void exit(int status)
   {
     list_remove(&i->elem);
     free(i);
+  }
+
+  //Freeing files
+  for (e = list_begin (&t->open_file); e != list_end (&t->open_file);)
+  {
+    free_files = list_entry(e, struct open_file_info, elem);
+    file_close(free_files->fp);
+    e = list_remove(&free_files->elem);
   }
   process_exit();
   thread_exit ();
@@ -217,13 +226,12 @@ int open(const char *file_name)
   FILE_SYNC_BARRIER
   f1->fp = filesys_open(file_name);
   FILE_SYNC_BARRIER_END
-  //printf("deny_write %d\n", f1->fp->deny_write);
+
   if(f1->fp == NULL)
     return ERROR;
 
   f1->fd = (t->fd)++;
 
-  //printf("f1->fd = %d 0x%x\n", f1->fd, f1->fp);
   list_push_back(&t->open_file, &f1->elem);
   return f1->fd;
 }
@@ -262,8 +270,6 @@ int exec(const char *file_name)
     exit(ERROR);
   pid = process_execute(file_name);
   return pid;
-  //TODO
-  //sem_down( thread_current()->child->sem
 }
 bool create(const char *file, unsigned initial_size)
 {
