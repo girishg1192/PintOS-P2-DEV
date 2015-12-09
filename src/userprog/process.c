@@ -139,6 +139,7 @@ process_wait (tid_t child_tid)
   if(child && !child->wait_once)
   {
     child->wait_once = true;
+    if(&child->wait_sem != NULL)
     sema_down(&child->wait_sem);
     return child->exit_status;
   }
@@ -399,7 +400,6 @@ bool push_args(void **esp, char *file_name, char **temp)
 
   ASSERT(argv != NULL);
 
-
   //Saving argvs in rtl format
   for (save = (char *) file_name; save!= NULL;
       save= strtok_r (NULL, " ", temp))
@@ -408,6 +408,7 @@ bool push_args(void **esp, char *file_name, char **temp)
     {
       argv_size += 2;
       argv = realloc(argv, argv_size*sizeof(char *));
+      argvs = realloc(argvs, argv_size*sizeof(char *));
     }
     argvs[argc] = save;
     argc++;
@@ -415,8 +416,7 @@ bool push_args(void **esp, char *file_name, char **temp)
 
   for(i=argc-1; i>=0; i--)
   {
-    *esp = *esp - (strlen(argvs[i])+1);
-    memcpy(*esp, argvs[i], strlen(argvs[i])+1);
+    push_to_stack(esp, argvs[i], strlen(argvs[i])+1);
     argv[i] = *esp;
   }
   argv[argc]=0;
@@ -430,20 +430,22 @@ bool push_args(void **esp, char *file_name, char **temp)
 
   for(i=argc; i>=0; i--)
   {
-    *esp -= sizeof(char *);
-    memcpy(*esp, &argv[i], sizeof(char *));
+    push_to_stack(esp, &argv[i], sizeof(char *));
   }
   //pushing memory address of argv and arg count in esp
+  //
   argv = *esp;
-  *esp -= sizeof(char **);
-  memcpy(*esp, &argv, sizeof(char **));
-
-  *esp -= sizeof(int);
-  memcpy(*esp, &argc, sizeof(int));
+  push_to_stack(esp, &argv, sizeof(char **));
+  push_to_stack(esp, &argc, sizeof(int));
 
   *esp -= sizeof(void(*)());
 
   return true;
+}
+void push_to_stack(void **esp, void *value, int size)
+{
+  *esp-= size;
+  memcpy(*esp, value, size);
 }
 
 static bool install_page (void *upage, void *kpage, bool writable);
