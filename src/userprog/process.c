@@ -48,7 +48,6 @@ process_execute (const char *file_name)
   if (file_name_copy == NULL)
     return TID_ERROR;
   strlcpy (file_name_copy, file_name, PGSIZE);
-  
   file_name_copy = strtok_r(file_name_copy, " ", &temp);  //Added to create thread with name as the first argument
 
   /* Create a new thread to execute FILE_NAME. */
@@ -59,11 +58,16 @@ process_execute (const char *file_name)
     palloc_free_page (file_name_copy); 
   }
 
+  /* After the thread is created the child process can still fail 
+   * at loading the executable, the parent retrieves the 
+   * thread_info for the child, and waits on the child threads
+   * semaphore wait_load_sem. child thread posts the semaphore
+   * if it successfully loads
+   */
   wait_for_child = find_child_for_tid(tid);
   sema_down(&wait_for_child->wait_load_sem);
   if(!wait_for_child->is_load_successful)
     return TID_ERROR;
-  
   return tid;
 }
 
@@ -83,10 +87,9 @@ start_process (void *file_name_)
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
   success = load (file_name, &if_.eip, &if_.esp);
-  //TODO
   
   if(success)
-    thread_current()->info->is_load_successful = true;
+    thread_current()->info->is_load_successful = true; // successfully loaded
   sema_up(&thread_current()->info->wait_load_sem);
   
 
@@ -105,15 +108,13 @@ start_process (void *file_name_)
   NOT_REACHED ();
 }
 
-/* Waits for thread TID to die and returns its exit status.  If
-   it was terminated by the kernel (i.e. killed due to an
-   exception), returns -1.  If TID is invalid or if it was not a
-   child of the calling process, or if process_wait() has already
-   been successfully called for the given TID, returns -1
-   immediately, without waiting.
-
-   This function will be implemented in problem 2-2.  For now, it
-   does nothing. */
+/*
+ * Helper function: returns thread_info for the child corresponding
+ * to the tid passed
+ * Traverses the child list for a thread and checks for the thread
+ * with the passed tid.
+ * If the child tid does not exist returns NULL
+ */
 struct thread_info*
 find_child_for_tid(tid_t child_tid)
 {
@@ -130,6 +131,14 @@ find_child_for_tid(tid_t child_tid)
   }
   return NULL;
 }
+/*
+ * process_wait function.
+ * Waits for thread(tid) to exit
+ * parent thread downs child threads wait_sem
+ * and then returns the exit status
+ * if the parent has already waited for this thread
+ * returns -1
+ */
 int
 process_wait (tid_t child_tid) 
 {
@@ -147,7 +156,9 @@ process_wait (tid_t child_tid)
     return -1;
 }
 
-/* Free the current process's resources. */
+/* Free the current process's resources.
+ * Edit: Closes the program executable
+ */
 void
 process_exit (void)
 {
@@ -156,7 +167,6 @@ process_exit (void)
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
-  //file_allow_write(file);
   if(cur->open_executable)
   {
     file_close (cur->open_executable);
@@ -296,6 +306,11 @@ load (const char *file_name, void (**eip) (void), void **esp)
       printf ("load: %s: open failed\n", file_name);
       goto done; 
     }
+
+  /*
+   * Denying write to executables, file not closed at the end of load()
+   * file closed in process_exit
+   */
   t->open_executable = file;
   file_deny_write (file);
 
@@ -376,7 +391,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
     goto done;
   else
   {
-    push_args(esp, file_name, &temp);
+    push_args(esp, file_name, &temp);   //Push arguments onto the stack
   }
 
   /* Start address. */
@@ -390,7 +405,13 @@ load (const char *file_name, void (**eip) (void), void **esp)
 }
 
 /* load() helpers. */
-
+/*
+ * Function to push arguments on the stack 
+ * Arguments stored in rtl format in arv array
+ * addresses to argv then stored to the argvs array
+ * Uses push_to_stack routine to decrement the stack
+ * pointer and push the arguments
+ */
 bool push_args(void **esp, char *file_name, char **temp)
 {
   char *save;

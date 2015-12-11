@@ -59,6 +59,7 @@ static unsigned thread_ticks;   /* # of timer ticks since last yield. */
    If true, use multi-level feedback queue scheduler.
    Controlled by kernel command-line option "-o mlfqs". */
 bool thread_mlfqs;
+/* Stores the thread_info structure for the main thread*/
 static struct thread_info main_info;
 
 static void kernel_thread (thread_func *, void *aux);
@@ -478,6 +479,11 @@ init_thread (struct thread *t, const char *name, int priority)
   list_push_back (&all_list, &t->allelem);
   intr_set_level (old_level);
 }
+/*
+ * function to initialize thread_info structure for a new thread
+ * Assigns initial values to thread_info variables and adds the thread
+ * to the parent threads child_list
+ */
 void
 init_thread_info (struct thread *t)
 {
@@ -487,27 +493,18 @@ init_thread_info (struct thread *t)
   else 
     info = &main_info;
   ASSERT(info!=NULL);
-  //printf("point 1\n");
-  //if(thread_current()!=idle_thread)
-  {
-    info->is_alive = true;
-    info->is_parent_alive = true;
-    list_init(&info->child_list);
-    sema_init(&info->wait_sem, 0);
-    sema_init(&info->wait_load_sem, 0);
-    info->exit_status = -1;
-    info->tid = t->tid;
-    info->wait_once = false;
-    info->is_load_successful = false;
-    if(thread_current()->info!=NULL)
-      list_push_back (&thread_current()->info->child_list, &info->elem);
-    t->info = info;
-  }
-  //else
-  //{
-  //  free(info);
-  //}
-  //printf("parent:%s tid:%d child:%s info:0x%x\n", thread_current()->name, thread_current()->tid, t->name, t->info);
+  info->is_alive = true;
+  info->is_parent_alive = true;
+  list_init(&info->child_list);
+  sema_init(&info->wait_sem, 0);
+  sema_init(&info->wait_load_sem, 0);
+  info->exit_status = -1;
+  info->tid = t->tid;
+  info->wait_once = false;
+  info->is_load_successful = false;
+  if(thread_current()->info!=NULL)
+    list_push_back (&thread_current()->info->child_list, &info->elem);
+  t->info = info;
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and

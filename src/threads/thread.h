@@ -101,9 +101,10 @@ struct thread
 
     struct list open_file;              /* List of open files */
     int fd;
-    struct thread_info *info;           /*Stores the pointer of of 
+    struct thread_info *info;           /* Stores the pointer of of 
                                           thread_info struct*/
-    struct file *open_executable;
+    struct file *open_executable;       /* Stores the file structure of
+                                            the running userprogram*/
 #endif
 
     /* Owned by thread.c. */
@@ -113,8 +114,8 @@ struct thread
 //
 struct open_file_info
 {
-  struct file *fp;
-  int fd;
+  struct file *fp;                    /* File pointer*/
+  int fd;                             /* File descriptor associated to the file */
   struct list_elem elem;              /* List element to add to open_file*/
 };
 
@@ -128,12 +129,14 @@ struct open_file_info
 struct thread_info
 {
   //int ppid;
-  int tid;
-  bool is_parent_alive;
-  struct list child_list;
-  bool is_alive;
-  int exit_status;
-  struct list_elem elem;
+  int tid;                          /* thread id of the thread */
+  bool is_parent_alive;             /* flag that stores parent status */
+  bool is_alive;                    /* flag that stores if the thread is alive */
+  struct list child_list;           /* List of all child threads, stores thread_info
+                                        structure of the threads*/
+  int exit_status;                  /* Stores the exit status of the thread, 
+                                        parent thread uses this value*/
+  struct list_elem elem;            /* list_elem to add in the child_list */
 
   /*Synch primitives for wait() syscall*/
   bool wait_once;
@@ -143,7 +146,6 @@ struct thread_info
    * if load() function fails, child stores loading status in is_load_successful*/
   bool is_load_successful;
   struct semaphore wait_load_sem;
-
 };
 
 /* If false (default), use round-robin scheduler.

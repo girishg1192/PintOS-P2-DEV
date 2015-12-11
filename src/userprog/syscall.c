@@ -38,8 +38,6 @@ syscall_handler (struct intr_frame *f UNUSED)
   int syscall_number=-1;
   uint32_t *esp_top = f->esp;
 
-  //hex_dump(0, f->esp, PHYS_BASE - f->esp, true);
-
   if(!check_pointer((void *)esp_top))
     exit(ERROR);
   syscall_number = *esp_top++;
@@ -58,13 +56,11 @@ syscall_handler (struct intr_frame *f UNUSED)
                      exit(ERROR);
                    f->eax = open((const char *) *esp_top);
                    break;
-    case SYS_CLOSE: //if(!check_pointer(esp_top));
-                   // exit(-1);
-                   close(*esp_top);
+    case SYS_CLOSE: close((int) *esp_top);
                    break;
     case SYS_READ: f->eax = read((int)(*esp_top), (void *)(*(esp_top+1)), (unsigned) *(esp_top+2) );
                    break;
-    case SYS_WAIT: f->eax = wait(*esp_top);
+    case SYS_WAIT: f->eax = wait((int)*esp_top);
                    break;
     case SYS_HALT: halt();
                    break;
@@ -76,15 +72,26 @@ syscall_handler (struct intr_frame *f UNUSED)
                      break;
     case SYS_REMOVE: f->eax = remove((const char *) *esp_top);
                      break;
-    case SYS_FILESIZE: f->eax = filesize(*esp_top);
+    case SYS_FILESIZE: f->eax = filesize((int) *esp_top);
                        break;
-    case SYS_SEEK: seek(*esp_top, (unsigned) *(esp_top+1));
+    case SYS_SEEK: seek((int)*esp_top, (unsigned) *(esp_top+1));
                    break;
-    case SYS_TELL: f->eax = tell(esp_top);
+    case SYS_TELL: f->eax = tell((int)*esp_top);
                    break;
   }
 }
 
+/* Function to find the open file information
+ * Arguments: file descriptor (fd), pointer to open_file_info
+ * Matching file information stored in file_info argument
+ *
+ * Mapping file descriptor integers to file structure
+ * Each thread maintains an open_file list in the thread 
+ * structure, traverse the list, and find the open file 
+ * with the passed fd.
+ * If such a file is found, return SUCCESS(0) and store result
+ * in file_info, else return -1
+ */
 int find_file_from_fd(int fd, struct open_file_info **file_info)
 {
   struct thread *t = thread_current();
@@ -103,8 +110,27 @@ int find_file_from_fd(int fd, struct open_file_info **file_info)
     }
   }
     return ERROR;
-}  
+}
 
+/*
+ * Exit system call
+ *
+ * Exit performs
+ * 1. Orphaning any child thread: For each child thread
+ * is_parent_alive in thread_info set to false, and child
+ * is removed from the parents child list. If the child is
+ * dead parent frees any memory allocated to child threads
+ * thread_info
+ * 2. Signalling exit status to parent thread: If the 
+ * Parent thread is alive, change child status to dead 
+ * is_alive=false, and write exit status to memory
+ * If the parent is terminated, free any memory associated
+ * to the child process
+ * 3. Closing open files: For each thread, close all open
+ * files that have not been closed by the user program
+ *
+ * finally thread_exit is called, thus terminating the thread
+ */
 void exit(int status)
 {
   struct thread *t=thread_current();
@@ -144,10 +170,19 @@ void exit(int status)
     e = list_remove(&free_files->elem);
     free(free_files);
   }
-  process_exit();
   thread_exit ();
 }
 
+/* Write syscall
+ * Writes size number of items from buffer to the file
+ * associated with fd
+ *
+ * if fd is STDOUT write to console
+ * for fd>=2 find the file related to it, and write
+ * returns the number of bytes successfully written
+ * returns an error in case of invalid buffer,
+ * invalid fd, NULL buffer
+ */
 int write(int fd, void *buffer, unsigned size)
 {
   struct open_file_info *file_info = NULL;
@@ -180,6 +215,16 @@ int write(int fd, void *buffer, unsigned size)
   return size;
 }
 
+/* Read syscall
+ * Read size number of items from buffer to the file
+ * associated with fd
+ *
+ * if fd is STDIN read from console
+ * for fd>=2 find the file related to it, and read 
+ * returns the number of bytes successfully read 
+ * returns an error in case of invalid buffer,
+ * invalid fd, NULL buffer
+ */
 int read(int fd, void *buffer, unsigned size)
 {
 
@@ -205,13 +250,22 @@ int read(int fd, void *buffer, unsigned size)
   if(find_file_from_fd(fd, &file_info) < 0)
     return ERROR;
 
-  FILE_SYNC_BARRIER 
   size = file_read(file_info->fp, buffer, size);
-  FILE_SYNC_BARRIER_END
 
   return size;
 }
-
+/* Open syscall
+ * Argument: A pointer containing the name
+ * of the file to be opened
+ * Function opens the file, stores the file pointer,
+ * file descriptor in an open_file_info structure
+ * and adds it to the list of open files for the
+ * process
+ * Return value: value of the file descriptor assigned
+ * to the file
+ * returns an error in case of an invalid file/file_open
+ * error
+ */
 int open(const char *file_name)
 {
   struct thread *t= thread_current();
@@ -223,26 +277,35 @@ int open(const char *file_name)
     
 
   if(file_name == NULL)
+  {
+    free(f1);
     return ERROR;
-  FILE_SYNC_BARRIER
+  }
   f1->fp = filesys_open(file_name);
-  FILE_SYNC_BARRIER_END
 
   if(f1->fp == NULL)
+  {
+    free(f1);
     return ERROR;
+  }
 
   f1->fd = (t->fd)++;
 
   list_push_back(&t->open_file, &f1->elem);
   return f1->fd;
 }
-
+/* Close systemcall
+ * Argument: File descriptor(fd)
+ * closes the file associated to the file descriptor
+ * The function finds the file associated to the file
+ * descriptor and closes it, the file is then removed
+ * from the open file list and the open_file_info structure
+ * is freed
+ */
 void close(int fd)
 {
   struct open_file_info *file_info ;//= (struct open_file_info *) 
                                     //      malloc(sizeof(struct open_file_info));
-
-  //printf("fd = %d 0x%x\n", fd, file_info);
 
   if(find_file_from_fd(fd, &file_info) == SUCCESS)
   {
@@ -254,16 +317,27 @@ void close(int fd)
     free(file_info);
   }
 }
-
+/* Wait syscall
+ * Arguments: child_pid for which the process waits
+ * The function waits for the child process to exit
+ * and returns the exit status of the child thread
+ */
 int wait(int pid)
 {
   int ret = process_wait(pid);
   return ret;
 }
+/* Halt systemcall
+ * Shuts down the kernel
+ */
 void halt()
 {
   shutdown_power_off();
 }
+/* Exec syscall
+ * Arguments: file name for the file to be executed
+ * Function calls process_execute to execute
+ */
 int exec(const char *file_name)
 {
   int pid;
@@ -272,6 +346,12 @@ int exec(const char *file_name)
   pid = process_execute(file_name);
   return pid;
 }
+/* Create syscall
+ * Arguments: pointer containing the file to be created,
+ * unsigned value of the initial size of the file
+ * creates a file in the filesystem and returns true,
+ * if successfully created, ERROR otherwise
+ */
 bool create(const char *file, unsigned initial_size)
 {
   int ret;
@@ -287,6 +367,11 @@ bool create(const char *file, unsigned initial_size)
 
   return ret;
 }
+/* Remove syscall
+ * Arguments: pointer containing the file to be removed
+ * Function removes the file from the filesystem
+ * returns true if the file was successfully removed
+ */
 bool remove(const char *file)
 {
   bool ret;
@@ -298,24 +383,40 @@ bool remove(const char *file)
   return ret;
 }
 
+/* seek syscall
+ * Arguments: file descriptor(int), position in file to seek to
+ * Function advances the file pointer to the position passed,
+ * File is found from the open list from the fd.
+ */
 void seek(int fd, unsigned position)
 {
-
   struct open_file_info *file_info = NULL;
 
   if(!find_file_from_fd(fd, &file_info))
   {
-  FILE_SYNC_BARRIER
     file_seek(file_info->fp, position);
-  FILE_SYNC_BARRIER_END
   }
-  //
 }
-unsigned tell(uint32_t *esp)
+/* tell syscall
+ * Arguments: file descriptor
+ * Function returns the current position of the file pointer
+ */
+unsigned tell(int fd)
 {
-  //
-}
+  int position;
+  struct open_file_info *file_info = NULL;
 
+  if(!find_file_from_fd(fd, &file_info))
+  {
+    position = file_tell(file_info->fp);
+  }
+  return position;
+}
+/* filesize syscall
+ * Arguments: file descriptor
+ * Function returns the size of the file associated to the
+ * file descriptor
+ */
 int filesize(int fd)
 {
   struct open_file_info *file_info = NULL;
@@ -324,7 +425,11 @@ int filesize(int fd)
     return ERROR;
   return file_length(file_info->fp);
 }
-
+/*
+ * Checks if the pointer is in user space
+ * Checks if the pointer is mapped to a page
+ * returns false if any of the conditions fail
+ */
 bool check_pointer(void* ptr)
 {
   if(!is_user_vaddr(ptr))
@@ -337,6 +442,11 @@ bool check_pointer(void* ptr)
   }
   return true;
 }
+/*
+ * Checks if the entire buffer is in user space
+ * Checks if the entire buffer is mapped to a page
+ * returns false if any of the conditions fail
+ */
 bool check_buffer(void *buffer, int size)
 {
   int iter=size;

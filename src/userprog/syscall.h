@@ -19,7 +19,7 @@ bool create(const char *, unsigned );
 bool remove(const char *);
 int filesize(int);
 void seek(int,unsigned);
-unsigned tell(uint32_t*);
+unsigned tell(int);
 
 //int find_file_from_fd(int fd, struct open_file_info *file_info);
 
