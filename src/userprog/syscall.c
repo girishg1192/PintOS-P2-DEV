@@ -9,6 +9,7 @@
 #include "filesys/file.h"
 #include "threads/malloc.h"
 #include "devices/shutdown.h"
+#include "userprog/pagedir.h"
 
 #define STDOUT 1
 #define STDIN 0
@@ -229,7 +230,7 @@ int read(int fd, void *buffer, unsigned size)
 {
 
   struct open_file_info *file_info = NULL;
-  int iter;
+  unsigned int iter;
 
   if(buffer == NULL)
     return ERROR;
@@ -250,7 +251,9 @@ int read(int fd, void *buffer, unsigned size)
   if(find_file_from_fd(fd, &file_info) < 0)
     return ERROR;
 
+  FILE_SYNC_BARRIER 
   size = file_read(file_info->fp, buffer, size);
+  FILE_SYNC_BARRIER_END
 
   return size;
 }
@@ -403,7 +406,7 @@ void seek(int fd, unsigned position)
  */
 unsigned tell(int fd)
 {
-  int position;
+  int position=ERROR;
   struct open_file_info *file_info = NULL;
 
   if(!find_file_from_fd(fd, &file_info))

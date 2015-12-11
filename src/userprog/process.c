@@ -22,6 +22,7 @@
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 struct thread_info* find_child_for_tid(tid_t child_tid);
+void push_to_stack(void **esp, void *value, int size);
 struct file *file = NULL;
 
 /* Starts a new thread running a user program loaded from
@@ -34,7 +35,7 @@ process_execute (const char *file_name)
   char *fn_copy, *temp;
   tid_t tid;
 
-  char *file_name_copy;
+  char *file_name_copy, *name;
   struct thread_info *wait_for_child;
 
   /* Make a copy of FILE_NAME.
@@ -44,18 +45,20 @@ process_execute (const char *file_name)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
 
-  file_name_copy = palloc_get_page (0);
+  file_name_copy = malloc(sizeof(char*)*(strlen(file_name)+1));
   if (file_name_copy == NULL)
     return TID_ERROR;
   strlcpy (file_name_copy, file_name, PGSIZE);
-  file_name_copy = strtok_r(file_name_copy, " ", &temp);  //Added to create thread with name as the first argument
+  name = strtok_r(file_name_copy, " ", &temp);  //Added to create thread with name as the first argument
 
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name_copy, PRI_DEFAULT, start_process, fn_copy);
+  tid = thread_create (name, PRI_DEFAULT, start_process, fn_copy);
+  free(file_name_copy);
   if (tid == TID_ERROR)
   {
     palloc_free_page (fn_copy); 
-    palloc_free_page (file_name_copy); 
+    free (file_name_copy); 
+    return TID_ERROR;
   }
 
   /* After the thread is created the child process can still fail 
@@ -90,13 +93,19 @@ start_process (void *file_name_)
   
   if(success)
     thread_current()->info->is_load_successful = true; // successfully loaded
+  else
+  {
+    palloc_free_page (file_name);
+    sema_up(&thread_current()->info->wait_load_sem);
+    exit(-1);
+  }
   sema_up(&thread_current()->info->wait_load_sem);
   
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
   if (!success) 
-    thread_exit ();
+    process_exit();
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -391,7 +400,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
     goto done;
   else
   {
-    push_args(esp, file_name, &temp);   //Push arguments onto the stack
+    push_args(esp, (char *)file_name, &temp);   //Push arguments onto the stack
   }
 
   /* Start address. */
@@ -444,10 +453,7 @@ bool push_args(void **esp, char *file_name, char **temp)
 
   //Word align esp, to boundary of 4
   i= ((unsigned int)(*esp))%4;
-  if(i)
-  {
-   *esp-=i;
-  }
+  *esp-=i;
 
   for(i=argc; i>=0; i--)
   {
@@ -455,12 +461,14 @@ bool push_args(void **esp, char *file_name, char **temp)
   }
   //pushing memory address of argv and arg count in esp
   //
-  argv = *esp;
-  push_to_stack(esp, &argv, sizeof(char **));
+  char *argv_save = *esp;
+  push_to_stack(esp, &argv_save, sizeof(char **));
   push_to_stack(esp, &argc, sizeof(int));
 
-  *esp -= sizeof(void(*)());
+  *esp -= sizeof(void *);
 
+  free(argvs);
+  free(argv);
   return true;
 }
 void push_to_stack(void **esp, void *value, int size)

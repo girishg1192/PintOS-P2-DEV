@@ -13,7 +13,7 @@ int read(int, void *, unsigned);
 int open(const char *);
 void close(int);
 int wait(int);
-void halt();
+void halt(void);
 int exec(const char *);
 bool create(const char *, unsigned );
 bool remove(const char *);
