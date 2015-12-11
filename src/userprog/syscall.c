@@ -142,6 +142,7 @@ void exit(int status)
     free_files = list_entry(e, struct open_file_info, elem);
     file_close(free_files->fp);
     e = list_remove(&free_files->elem);
+    free(free_files);
   }
   process_exit();
   thread_exit ();
