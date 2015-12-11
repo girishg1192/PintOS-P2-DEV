@@ -53,13 +53,13 @@ process_execute (const char *file_name)
 
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (name, PRI_DEFAULT, start_process, fn_copy);
-  free(file_name_copy);
   if (tid == TID_ERROR)
   {
     palloc_free_page (fn_copy); 
     free (file_name_copy); 
     return TID_ERROR;
   }
+//  free(file_name_copy);
 
   /* After the thread is created the child process can still fail 
    * at loading the executable, the parent retrieves the 

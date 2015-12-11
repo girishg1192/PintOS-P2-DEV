@@ -60,7 +60,7 @@ pass tests/userprog/bad-read2
 pass tests/userprog/bad-write2
 pass tests/userprog/bad-jump
 pass tests/userprog/bad-jump2
-pass tests/userprog/no-vm/multi-oom
+FAIL tests/userprog/no-vm/multi-oom
 pass tests/filesys/base/lg-create
 pass tests/filesys/base/lg-full
 pass tests/filesys/base/lg-random
